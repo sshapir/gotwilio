@@ -51,10 +51,10 @@ func (twilio *Twilio) GetUsage(category, startDate, endDate string, includeSubac
 
 func (twilio *Twilio) GetUsageWithContext(ctx context.Context, category, startDate, endDate string, includeSubaccounts bool) (*UsageResponse, *Exception, error) {
 	formValues := url.Values{}
-	formValues.Set("category", category)
-	formValues.Set("start_date", startDate)
-	formValues.Set("end_date", endDate)
-	formValues.Set("include_subaccounts", strconv.FormatBool(includeSubaccounts))
+	formValues.Set("Category", category)
+	formValues.Set("StartDate", startDate)
+	formValues.Set("EndDate", endDate)
+	formValues.Set("IncludeSubaccounts", strconv.FormatBool(includeSubaccounts))
 
 	var usageResponse *UsageResponse
 	var exception *Exception
