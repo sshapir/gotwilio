@@ -6,7 +6,9 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
+	"strings"
 )
 
 // These are the parameters to use when you are requesting account usage.
@@ -43,13 +45,14 @@ type UsageResponse struct {
 	PageSize     int           `json:"page_size"`
 	Page         int           `json:"page"`
 	UsageRecords []UsageRecord `json:"usage_records"`
+	NextPageUri  string        `json:"next_page_uri"`
 }
 
-func (twilio *Twilio) GetUsage(category, startDate, endDate string, includeSubaccounts bool) (*UsageResponse, *Exception, error) {
+func (twilio *Twilio) GetUsage(category, startDate, endDate string, includeSubaccounts bool) ([]UsageRecord, *Exception, error) {
 	return twilio.GetUsageWithContext(context.Background(), category, startDate, endDate, includeSubaccounts)
 }
 
-func (twilio *Twilio) GetUsageWithContext(ctx context.Context, category, startDate, endDate string, includeSubaccounts bool) (*UsageResponse, *Exception, error) {
+func (twilio *Twilio) GetUsageWithContext(ctx context.Context, category, startDate, endDate string, includeSubaccounts bool) ([]UsageRecord, *Exception, error) {
 	formValues := url.Values{}
 	if category != "" {
 		formValues.Set("Category", category)
@@ -64,25 +67,48 @@ func (twilio *Twilio) GetUsageWithContext(ctx context.Context, category, startDa
 
 	var usageResponse *UsageResponse
 	var exception *Exception
-	twilioUrl := twilio.BaseUrl + "/Accounts/" + twilio.AccountSid + "/Usage/Records.json"
+	var usageRecords []UsageRecord
 
-	res, err := twilio.get(ctx, twilioUrl+"?"+formValues.Encode())
-	if err != nil {
-		return nil, nil, err
+	for {
+		if usageResponse != nil && usageResponse.NextPageUri == "" {
+			break
+		}
+
+		twilioUrl := twilio.BaseUrl + "/Accounts/" + twilio.AccountSid + "/Usage/Records.json?" + formValues.Encode()
+		if usageResponse != nil && usageResponse.NextPageUri != "" {
+			// clean up "/2010-04-01" that appears at the end of twilio.BaseUrl and beginning of each NextPageUri
+			uri := strings.Replace(usageResponse.NextPageUri, path.Base(twilio.BaseUrl), "", 1)
+			twilioUrl = twilio.BaseUrl + path.Clean(uri)
+		}
+
+		res, err := twilio.get(ctx, twilioUrl)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer res.Body.Close()
+
+		usageResponse, exception, err = parseResponse(res)
+		if exception != nil || err != nil {
+			return nil, exception, err
+		}
+		usageRecords = append(usageRecords, usageResponse.UsageRecords...)
 	}
-	defer res.Body.Close()
 
+	return usageRecords, nil, nil
+}
+
+func parseResponse(res *http.Response) (*UsageResponse, *Exception, error) {
 	responseBody, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return nil, nil, err
 	}
 	if res.StatusCode != http.StatusOK {
-		exception = new(Exception)
+		exception := new(Exception)
 		err = json.Unmarshal(responseBody, exception)
 		return nil, exception, err
 	}
 
-	usageResponse = new(UsageResponse)
+	usageResponse := new(UsageResponse)
 	err = json.Unmarshal(responseBody, usageResponse)
 	return usageResponse, nil, err
 }
